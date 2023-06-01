@@ -1,0 +1,79 @@
+:root {
+    --scale-factor: 1;
+    --grid-columns: 5;
+    --read-width: 1440px;
+    --read-height: 960px;
+    --grid-padding: 4px;
+}
+
+body {
+    margin: 0;
+    background: rgba(255, 196, 255, 0.6);
+    overflow: hidden;
+}
+
+body:fullscreen {
+    background: white;
+}
+
+:not(:root):fullscreen::backdrop {
+    background: rgba(255, 196, 255, 0.6);
+}
+
+#iframe-grid {
+    position: relative;
+    width: calc(100vw * (1 / var(--scale-factor)));
+    height: calc(100vh * (1 / var(--scale-factor)));
+    padding: calc(var(--grid-padding) * (1 / var(--scale-factor)));
+    display: grid;
+    grid-template-columns: repeat(var(--grid-columns), 1fr);
+    grid-gap: calc(var(--grid-padding) * (1 / var(--scale-factor)));
+    transform: scale(var(--scale-factor));
+    transform-origin: top left;
+    box-sizing: border-box;
+    overflow: scroll;
+    z-index: 1;
+}
+
+.thesis,
+.thesis iframe {
+    width: 100%;
+    height: var(--read-height);
+    border: 0;
+    margin: 0;
+    outline: 0;
+    background: white;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.thesis iframe {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.thesis::before {
+    content: "";
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: rgba(255, 196, 255, 0.6);
+    backdrop-filter: blur(10px);
+    z-index: 999;
+    transition: all 500ms ease;
+}
+
+.thesis:hover::before {
+    background: transparent;
+    backdrop-filter: blur(0);
+    pointer-events: all;
+    cursor: pointer;
+}
+
+.thesis.active::before {
+    display: none;
+    pointer-events: none;
+}
