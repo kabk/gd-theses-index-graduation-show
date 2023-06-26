@@ -1,22 +1,27 @@
 import theses from "./theses-data.js";
-let overviewScaleFactor    = 1;
-const readScaleFactor      = 0.9;
-const thesisWidth          = 1440;
-const thesisHeight         = 960;
-const gridColumnsAmount    = 5;
-const gridRowsAmount       = Math.ceil(theses.theses.length / gridColumnsAmount);
-const gridContainerPadding = 4;
-const gridContainerWidth   = thesisWidth * gridColumnsAmount;
-const gridContainer   = document.getElementById("iframe-grid");
+let overviewScaleFactor = 1;
+let readScaleFactor = 1;
+const thesisWidth = 1440;
+const thesisHeight = 960;
+const gridColumnsAmount = 5;
+const gridRowsAmount = Math.ceil(theses.theses.length / gridColumnsAmount);
+const gridContainerPadding = window.innerWidth / 100;
+const gridContainerWidth = thesisWidth * gridColumnsAmount;
+const gridContainer = document.getElementById("iframe-grid");
+const closeIcon = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 256 256"><polygon points="256,32 224,0 128,96 32,0 0,32 96,128 0,224 32,256 128,160 224,256 256,224 160,128 "/></svg>'
+let inactiveFocusCountdown = null;
 
 layoutGrid();
 
 window.addEventListener("resize", layoutGrid);
 window.addEventListener("keydown", keyBindings);
 
+document.body.addEventListener("mousemove", moveCursor);
+
 function layoutGrid () {
-    overviewScaleFactor = calculateScaleFactor(window.innerWidth, gridContainerWidth, gridColumnsAmount, gridContainerPadding);
-    setCSSVariables(gridContainer, gridColumnsAmount, overviewScaleFactor, gridContainerPadding);
+    overviewScaleFactor = calculateOverviewScaleFactor(window.innerWidth, gridContainerWidth, gridColumnsAmount, gridContainerPadding);
+    readScaleFactor = calculateReadScaleFactor(window.innerHeight, thesisHeight);
+    setCSSVariables(gridContainer, gridColumnsAmount, overviewScaleFactor, readScaleFactor, gridContainerPadding);
 
     if (!gridContainer.hasChildNodes()) {
         appendIFrames(theses.theses, readScaleFactor, gridColumnsAmount, gridRowsAmount, gridContainer, gridContainerPadding, overviewScaleFactor, window.innerWidth, window.innerHeight, thesisWidth, thesisHeight);
@@ -25,12 +30,16 @@ function layoutGrid () {
     }
 }
 
-function setCSSVariables (target, columnsAmount, scaleFactor, padding) {
-    target.setAttribute("style", `--grid-columns: ${columnsAmount}; --scale-factor: ${scaleFactor}; --grid-padding: ${padding}px;`);
+function setCSSVariables (target, columnsAmount, zoomedOutScaleFactor, zoomedInFactor, padding) {
+    target.setAttribute("style", `--grid-columns: ${columnsAmount}; --zoom-out-scale: ${zoomedOutScaleFactor}; --zoom-in-scale: ${zoomedInFactor}; --grid-padding: ${padding}px;`);
 }
 
-function calculateScaleFactor (viewportWidth, originalWidth, columnsAmount, padding) {
+function calculateOverviewScaleFactor (viewportWidth, originalWidth, columnsAmount, padding) {
     return 1 / (originalWidth / (viewportWidth - (columnsAmount + 1) * padding));
+}
+
+function calculateReadScaleFactor (viewportHeight, originalHeight) {
+    return (viewportHeight / originalHeight) * .8;
 }
 
 function appendIFrames (iframeElements, readingScale, columnAmount, rowsAmount, bucketElement, containerPadding, containerScale, viewportWidth, viewportHeight, thesisWidth, thesisHeight) {
@@ -44,15 +53,20 @@ function appendIFrames (iframeElements, readingScale, columnAmount, rowsAmount, 
         const yOffset = calculateYOffset(readingScale, yIndex, rowsAmount, containerScale, viewportHeight, thesisHeight, containerPadding);
 
         const thesisIFrame = createThesisIFrame(iframeElements[i].url);
+        const thesisCloseButton = createCloseButton();
         const thesisWrapper = createThesisWrapper(iframeElements[i].author, iframeElements[i].title, iframeElements[i].description, iframeElements[i].url, xOffset, xIndex, yOffset, yIndex);
 
-        thesisWrapper.addEventListener("click", toggleThesis);
-        // thesisWrapper.addEventListener("mouseenter", updateCursorContent);
-        // thesisWrapper.addEventListener("mouseleave", updateCursorContent);
-
         thesisWrapper.append(thesisIFrame);
+
+        thesisCloseButton.addEventListener("click", unfocusTheses);
+        thesisWrapper.append(thesisCloseButton);
+
+        thesisWrapper.addEventListener("click", focusOnThesis);
+        thesisWrapper.addEventListener("mouseenter", updateCursor);
+        thesisWrapper.addEventListener("mouseleave", updateCursor);
+
         bucketElement.append(thesisWrapper);
-        // gridContainer.addEventListener("")
+        bucketElement.addEventListener("mouseleave", updateCursor);
     }
 }
 
@@ -72,7 +86,7 @@ function calculateYOffset (readingScale, index, rowsAmount, containerScale, view
     const scaledPaddingSize = (containerPadding * inverseScaleFactor) * readingScale;
     const centerPadding = (innerHeight - (offsetElementY * readingScale)) / 2;
 
-    const centerYOffsetPixel = centerPadding - scaledPaddingSize * 3;
+    const centerYOffsetPixel = centerPadding - scaledPaddingSize;
     const centerYOffsetPercentage = (((centerYOffsetPixel / innerHeight) * 100) * containerScale) / readingScale;
 
     return ((index * (100 / rowsAmount)) - centerYOffsetPercentage) * -1;
@@ -99,6 +113,13 @@ function createThesisWrapper (author, title, description, url, xOffset, xIndex, 
     return wrapper;
 }
 
+function createCloseButton () {
+    const button = document.createElement("button");
+    button.innerHTML = closeIcon;
+    button.classList.add("deactivate-thesis");
+    return button;
+}
+
 function updateIFramesCoordinates (iframeSelector, readingScale, columnAmount, rowsAmount, containerScale, viewportWidth, viewportHeight, thesisWidth, thesisHeight, containerPadding) {
     const iframes = document.querySelectorAll(iframeSelector);
     iframes.forEach(iframe => {
@@ -110,21 +131,52 @@ function updateIFramesCoordinates (iframeSelector, readingScale, columnAmount, r
     });
 }
 
-function zoomThesis (event) {
-    event.currentTarget.style.transform = `scale(${1 / scaleFactor})`;
-}
+function focusOnThesis (event) {
+    if (event.target.classList.contains("deactivate-thesis")) {
+        return;
+    }
 
-function toggleThesis (event) {
     const prevTheses = document.querySelectorAll(".active");
 
     prevTheses.forEach((prevThesis) => {
         prevThesis.classList.remove("active");
+        prevThesis.removeEventListener("mouseleave", showCursor);
+        prevThesis.removeEventListener("mouseenter", hideCursor);
+        reloadIFrame(prevThesis);
     });
 
     const thesis = event.currentTarget;
     thesis.parentElement.style.cssText += `--left-offset: ${thesis.getAttribute("data-x-pos")}%;`;
     thesis.parentElement.style.cssText += `--top-offset: ${thesis.getAttribute("data-y-pos")}%;`;
+    thesis.parentElement.classList.add("zoom-in")
+    hideCursor();
     thesis.classList.add("active");
+    thesis.addEventListener("mouseleave", showCursor);
+    thesis.addEventListener("mouseenter", hideCursor);
+
+    if (inactiveFocusCountdown) {
+        clearTimeout(inactiveFocusCountdown);
+    }
+}
+
+function unfocusTheses (event) {
+    const reloadThis = document.querySelector(".active");
+
+    inactiveFocusCountdown = setTimeout(() => {
+        reloadIFrame(reloadThis);
+    }, 60000);
+
+    document.querySelectorAll(".active, .zoom-in").forEach((element) => {
+        element.classList.remove("active");
+        element.classList.remove("zoom-in");
+        element.removeEventListener("mouseleave", showCursor);
+        element.removeEventListener("mouseenter", hideCursor);
+        showCursor();
+    });
+}
+
+function reloadIFrame (element) {
+    element.querySelector("iframe").src = element.querySelector("iframe").src;
 }
 
 function keyBindings (event) {
@@ -132,9 +184,36 @@ function keyBindings (event) {
         document.body.requestFullscreen();
     }
 
-    if (event.key === "b") {
-        document.querySelectorAll(".active").forEach((element) => {
-            element.classList.remove("active");
-        });
+    if (event.key === "c") {
+        unfocusTheses();
     }
+}
+
+function moveCursor (event) {
+    const cursor = document.getElementById("cursor");
+    cursor.style.transform = `translate(${event.clientX}px, ${event.clientY}px)`;
+}
+
+function updateCursor (event) {
+    const cursorText = document.querySelector("#cursor span");
+
+    if (event.type === "mouseleave") {
+        cursorText.textContent = "";
+        return
+    }
+
+    const hoveredThesis = event.currentTarget;
+    const author = hoveredThesis.getAttribute("data-author");
+    const title = hoveredThesis.getAttribute("data-title");
+    cursorText.textContent = author;
+}
+
+function hideCursor () {
+    const cursor = document.getElementById("cursor");
+    cursor.style.display = "none";
+}
+
+function showCursor () {
+    const cursor = document.getElementById("cursor");
+    cursor.removeAttribute("style");
 }
